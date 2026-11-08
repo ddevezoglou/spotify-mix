@@ -2,16 +2,17 @@ import { useEffect, useState } from "react";
 import { clearClientId, getAccessToken, getClientId, handleRedirect, login, logout } from "./spotify/auth";
 import { getMe } from "./spotify/api";
 import { PlayerTest } from "./components/PlayerTest";
-import { CoverageTest } from "./components/CoverageTest";
+import { NewSet } from "./components/NewSet";
+import { Result } from "./components/Result";
+import type { SetPlan } from "./mix/plan";
 import { Setup } from "./components/Setup";
-
-type Tab = "player" | "coverage";
 
 export function App() {
   const [me, setMe] = useState<{ id: string; display_name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("player");
+  const [plan, setPlan] = useState<SetPlan | null>(null);
+  const [showPlayer, setShowPlayer] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -72,14 +73,20 @@ export function App() {
       {me && (
         <>
           <nav className="tabs">
-            <button className={tab === "player" ? "on" : ""} onClick={() => setTab("player")}>
-              Player test
+            <button className={showPlayer ? "" : "on"} onClick={() => setShowPlayer(false)}>
+              Set
             </button>
-            <button className={tab === "coverage" ? "on" : ""} onClick={() => setTab("coverage")}>
-              Coverage test
+            <button className={showPlayer ? "on" : ""} onClick={() => setShowPlayer(true)}>
+              Δοκιμή player
             </button>
           </nav>
-          {tab === "player" ? <PlayerTest /> : <CoverageTest myId={me.id} />}
+          {showPlayer ? (
+            <PlayerTest />
+          ) : plan ? (
+            <Result plan={plan} onBack={() => setPlan(null)} />
+          ) : (
+            <NewSet myId={me.id} onPlan={setPlan} />
+          )}
         </>
       )}
     </main>
