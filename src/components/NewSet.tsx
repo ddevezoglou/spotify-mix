@@ -40,11 +40,11 @@ export function NewSet({ myId, onPlan }: { myId: string; onPlan(plan: SetPlan): 
         source === "saved"
           ? await getSavedTracks((n) => setProgress(`${LOADING} ${n}`))
           : await getPlaylistTracks(playlistId, (n) => setProgress(`${LOADING} ${n}`));
-      const profiles = await buildProfiles(tracks, {
+      const { profiles, failed } = await buildProfiles(tracks, {
         bpmRange: HOUSE_TECHNO.bpmRange,
         onProgress: (stage, done, total) => setProgress(`${STAGES[stage] ?? stage} ${done}/${total}`),
       });
-      onPlan(planSet(profiles, spec));
+      onPlan(planSet(profiles, spec, HOUSE_TECHNO, failed.features + failed.tags + failed.genres));
     } catch (e) {
       if (source === "saved" && e instanceof SpotifyError && e.status === 403) {
         setError("Το Spotify δεν επιτρέπει ανάγνωση των Saved για αυτό το app.");

@@ -18,6 +18,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Check WORKER_URL
+        env:
+          WORKER_URL: ${{ vars.WORKER_URL }}
+        run: |
+          if [ -z "$WORKER_URL" ]; then
+            echo "::error::Repository variable WORKER_URL is empty. Set it in Settings > Secrets and variables > Actions > Variables (see README)."
+            exit 1
+          fi
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:

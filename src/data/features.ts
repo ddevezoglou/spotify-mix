@@ -38,17 +38,29 @@ function saveCache(cache: Record<string, Features>) {
   }
 }
 
-async function fromReccoBeats(ids: string[], range: [number, number]): Promise<Map<string, Fields>> {
-  const out = new Map<string, Fields>();
+interface ReccoResult {
+  rows: Map<string, Fields>;
+  failed: Set<string>; // ids whose batch failed (non-OK or network error)
+}
+
+async function fromReccoBeats(ids: string[], range: [number, number]): Promise<ReccoResult> {
+  const rows = new Map<string, Fields>();
+  const failed = new Set<string>();
   for (let i = 0; i < ids.length; i += 20) {
     const batch = ids.slice(i, i + 20);
-    const res = await fetch(`https://api.reccobeats.com/v1/audio-features?ids=${batch.join(",")}`);
-    if (!res.ok) continue;
-    const data = await res.json();
+    let data: { content?: any[] };
+    try {
+      const res = await fetch(`https://api.reccobeats.com/v1/audio-features?ids=${batch.join(",")}`);
+      if (!res.ok) throw new Error(`ReccoBeats ${res.status}`);
+      data = await res.json();
+    } catch {
+      for (const id of batch) failed.add(id);
+      continue;
+    }
     for (const f of data.content ?? []) {
       const id = String(f.href ?? "").split("/").pop();
       if (!id) continue;
-      out.set(id, {
+      rows.set(id, {
         rawBpm: f.tempo ?? null,
         bpm: normalizeTempo(f.tempo, range),
         camelot: typeof f.key === "number" ? toCamelot(f.key, f.mode) : null,
@@ -60,17 +72,24 @@ async function fromReccoBeats(ids: string[], range: [number, number]): Promise<M
       });
     }
   }
-  return out;
+  return { rows, failed };
 }
 
-async function deezerBpm(isrc: string): Promise<number | null> {
+const DEEZER_NO_DATA = 800;
+
+/**
+ * "miss": Deezer answered and has no BPM (HTTP 200 without bpm > 0, or error code 800 "no data").
+ * "error": anything else (network, non-OK, other Deezer error such as 4 quota, worker not configured).
+ */
+async function deezerBpm(isrc: string): Promise<{ bpm: number } | "miss" | "error"> {
   try {
     const res = await workerFetch(`/deezer/track/isrc:${isrc}`);
-    if (!res.ok) return null;
+    if (!res.ok) return "error";
     const data = await res.json();
-    return data?.bpm > 0 ? data.bpm : null;
+    if (data?.error) return data.error.code === DEEZER_NO_DATA ? "miss" : "error";
+    return data?.bpm > 0 ? { bpm: data.bpm } : "miss";
   } catch {
-    return null;
+    return "error";
   }
 }
 
@@ -79,33 +98,52 @@ const EMPTY: Fields = {
   valence: null, danceability: null, instrumentalness: null, acousticness: null,
 };
 
+/**
+ * Features per track id. Lookups that failed (as opposed to genuinely missing data) are reported
+ * through `onFailure`, returned for this run only and never cached.
+ * A ReccoBeats row without tempo keeps its features and takes the BPM from Deezer; its source stays
+ * "reccobeats" because ReccoBeats supplied the features.
+ */
 export async function getFeatures(
   tracks: Track[],
-  opts: { bpmRange?: [number, number]; onProgress?: (done: number) => void } = {},
+  opts: { bpmRange?: [number, number]; onProgress?: (done: number) => void; onFailure?: (id: string) => void } = {},
 ): Promise<Map<string, Features>> {
   const range = opts.bpmRange ?? TEMPO_RANGE;
   const cache = loadCache();
   const now = Date.now();
-  const stale = (f?: Features) => !f || (f.source === "none" && now - f.fetchedAt > NONE_TTL_MS);
+  // Entries without BPM are "not found" results: they expire after 3 days.
+  const stale = (f?: Features) => !f || (!f.rawBpm && now - f.fetchedAt > NONE_TTL_MS);
   const missing = tracks.filter((t) => stale(cache[t.id]));
+  const runOnly = new Map<string, Features>();
 
   if (missing.length) {
     const recco = await fromReccoBeats(missing.map((t) => t.id), range);
     let done = 0;
     for (const t of missing) {
-      const r = recco.get(t.id);
+      const reccoFailed = recco.failed.has(t.id);
+      const r = recco.rows.get(t.id);
+      let entry: Features;
+      let failed = reccoFailed;
       if (r?.rawBpm) {
-        cache[t.id] = { ...r, source: "reccobeats", fetchedAt: now };
+        entry = { ...r, source: "reccobeats", fetchedAt: now };
       } else {
-        const dz = t.isrc ? await deezerBpm(t.isrc) : null;
-        cache[t.id] = dz
-          ? { ...EMPTY, rawBpm: dz, bpm: normalizeTempo(dz, range), source: "deezer", fetchedAt: now }
-          : { ...EMPTY, source: "none", fetchedAt: now };
+        const dz = t.isrc ? await deezerBpm(t.isrc) : "miss";
+        if (dz === "error") failed = true;
+        const bpm = typeof dz === "object" ? { rawBpm: dz.bpm, bpm: normalizeTempo(dz.bpm, range) } : {};
+        if (r) entry = { ...r, ...bpm, source: "reccobeats", fetchedAt: now };
+        else if (typeof dz === "object") entry = { ...EMPTY, ...bpm, source: "deezer", fetchedAt: now };
+        else entry = { ...EMPTY, source: "none", fetchedAt: now };
+      }
+      if (failed) {
+        runOnly.set(t.id, entry);
+        opts.onFailure?.(t.id);
+      } else {
+        cache[t.id] = entry;
       }
       opts.onProgress?.(++done);
     }
     saveCache(cache);
   }
 
-  return new Map(tracks.map((t) => [t.id, cache[t.id]]));
+  return new Map(tracks.map((t) => [t.id, runOnly.get(t.id) ?? cache[t.id]]));
 }

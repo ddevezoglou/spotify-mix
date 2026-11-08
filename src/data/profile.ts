@@ -75,20 +75,30 @@ async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
 }
 
+/** Lookups that failed (network, quota, upstream error) in this run, as opposed to genuinely missing data. */
+export interface FailedLookups {
+  features: number; // tracks
+  tags: number; // tracks
+  genres: number; // artists
+}
+
 export async function buildProfiles(
   tracks: Track[],
   opts: { bpmRange: [number, number]; onProgress?: (stage: string, done: number, total: number) => void },
-): Promise<TrackProfile[]> {
+): Promise<{ profiles: TrackProfile[]; failed: FailedLookups }> {
   const { onProgress } = opts;
+  const failedFeatures = new Set<string>();
   const features = await getFeatures(tracks, {
     bpmRange: opts.bpmRange,
     onProgress: onProgress ? (d: number) => onProgress("features", d, tracks.length) : undefined,
+    onFailure: (id) => failedFeatures.add(id),
   });
 
   // Last.fm tags, cached by track id.
   const cache = loadCache();
   const tagsById = new Map<string, string[]>();
   const todo: Track[] = [];
+  const failedTags = new Set<string>();
   const now = Date.now();
   for (const t of tracks) {
     const c = cache[t.id];
@@ -101,6 +111,7 @@ export async function buildProfiles(
     const tags = await fetchTags(t);
     if (tags === null) {
       tagsById.set(t.id, []); // this run only
+      failedTags.add(t.id);
     } else {
       tagsById.set(t.id, tags);
       cache[t.id] = { tags, fetchedAt: Date.now() };
@@ -112,6 +123,7 @@ export async function buildProfiles(
   // Spotify artist genres: once per unique first artist.
   const artistIds = [...new Set(tracks.map((t) => t.artistIds[0]).filter((id): id is string => !!id))];
   const genresByArtist = new Map<string, string[]>();
+  let failedGenres = 0;
   let gDone = 0;
   onProgress?.("genres", 0, artistIds.length);
   await pool(artistIds, CONCURRENCY, async (id) => {
@@ -119,12 +131,13 @@ export async function buildProfiles(
       genresByArtist.set(id, norm(await getArtistGenres(id)));
     } catch {
       genresByArtist.set(id, []);
+      failedGenres++;
     }
     onProgress?.("genres", ++gDone, artistIds.length);
   });
 
   const vocab = new Set(genreVocabulary());
-  return tracks.map((track) => {
+  const profiles = tracks.map((track) => {
     const f = features.get(track.id) as Features;
     const lastfm = tagsById.get(track.id) ?? [];
     const genres = genresByArtist.get(track.artistIds[0]) ?? [];
@@ -133,4 +146,5 @@ export async function buildProfiles(
     const genreSignal = tags.some((t) => vocab.has(t)) || genres.length > 0;
     return { track, features: f, tags, soundTags, hasEnoughData: f.bpm !== null && genreSignal };
   });
+  return { profiles, failed: { features: failedFeatures.size, tags: failedTags.size, genres: failedGenres } };
 }

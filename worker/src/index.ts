@@ -7,6 +7,7 @@ const TOKEN_TTL_MS = 10 * 60 * 1000;
 const MIN_TAG_COUNT = 10;
 const MAX_TAGS = 15;
 const MIN_TRACK_TAGS = 3;
+const LASTFM_NOT_FOUND = 6;
 
 // Per-isolate memo of verified tokens: SHA-256(token) -> expiry timestamp.
 const verified = new Map<string, number>();
@@ -21,16 +22,25 @@ async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function tokenIsValid(token: string, fetchFn: typeof fetch): Promise<boolean> {
+type TokenCheck = "valid" | "invalid" | "unavailable";
+
+async function checkToken(token: string, fetchFn: typeof fetch): Promise<TokenCheck> {
   const key = await sha256Hex(token);
   const exp = verified.get(key);
-  if (exp !== undefined && exp > Date.now()) return true;
-  const res = await fetchFn("https://api.spotify.com/v1/me", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status !== 200) return false;
+  if (exp !== undefined && exp > Date.now()) return "valid";
+  let res: Response;
+  try {
+    res = await fetchFn("https://api.spotify.com/v1/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    return "unavailable";
+  }
+  // Spotify rate limiting or outage says nothing about the token: never memoize it as a verdict.
+  if (res.status === 429 || res.status >= 500) return "unavailable";
+  if (res.status !== 200) return "invalid";
   verified.set(key, Date.now() + TOKEN_TTL_MS);
-  return true;
+  return "valid";
 }
 
 function corsHeaders(req: Request, env: Env): Record<string, string> {
@@ -56,7 +66,7 @@ async function lastfmTags(
   params: Record<string, string>,
   env: Env,
   fetchFn: typeof fetch,
-): Promise<string[]> {
+): Promise<string[] | null> {
   const url = new URL("https://ws.audioscrobbler.com/2.0/");
   url.searchParams.set("method", method);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -64,9 +74,10 @@ async function lastfmTags(
   url.searchParams.set("autocorrect", "1");
   url.searchParams.set("format", "json");
   const res = await fetchFn(url.toString());
-  if (!res.ok) return [];
+  if (!res.ok) return null;
   const data = (await res.json()) as LastfmTop;
-  if (data.error) return []; // e.g. error 6: unknown track/artist
+  if (data.error === LASTFM_NOT_FOUND) return [];
+  if (data.error) return null; // e.g. 29 rate limit, 11/16 service trouble: a failure, not "no tags"
   return (data.toptags?.tag ?? [])
     .filter((t) => Number(t.count) >= MIN_TAG_COUNT)
     .map((t) => t.name.trim().toLowerCase())
@@ -81,7 +92,8 @@ async function route(req: Request, env: Env, fetchFn: typeof fetch): Promise<Res
     const track = url.searchParams.get("track");
     if (!artist || !track) return Response.json({ error: "artist and track are required" }, { status: 400 });
     let tags = await lastfmTags("track.gettoptags", { artist, track }, env, fetchFn);
-    if (tags.length < MIN_TRACK_TAGS) tags = await lastfmTags("artist.gettoptags", { artist }, env, fetchFn);
+    if (tags !== null && tags.length < MIN_TRACK_TAGS) tags = await lastfmTags("artist.gettoptags", { artist }, env, fetchFn);
+    if (tags === null) return Response.json({ error: "last.fm unavailable" }, { status: 503 });
     return Response.json({ tags: tags.slice(0, MAX_TAGS) });
   }
 
@@ -109,11 +121,15 @@ export async function handle(req: Request, env: Env, fetchFn: typeof fetch): Pro
 
   const auth = req.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (!token || !(await tokenIsValid(token, fetchFn))) {
-    return finish(Response.json({ error: "unauthorized" }, { status: 401 }));
-  }
+  const check = token ? await checkToken(token, fetchFn) : "invalid";
+  if (check === "unavailable") return finish(Response.json({ error: "spotify unavailable" }, { status: 503 }));
+  if (check === "invalid") return finish(Response.json({ error: "unauthorized" }, { status: 401 }));
 
-  return finish(await route(req, env, fetchFn));
+  try {
+    return finish(await route(req, env, fetchFn));
+  } catch {
+    return finish(Response.json({ error: "upstream error" }, { status: 502 }));
+  }
 }
 
 export default {

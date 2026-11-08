@@ -55,11 +55,18 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
       </button>
       <div className="card">
         <h2>{spec.name}</h2>
-        <p className={coverage.go ? "" : "error"}>
-          {coverage.go
-            ? `Κάλυψη δεδομένων: ${coverage.enoughPct}% ✓`
-            : `Κάλυψη δεδομένων: ${coverage.enoughPct}%, κάτω από 80%. Πολλά tracks αποκλείστηκαν επειδή λείπουν στοιχεία.`}
-        </p>
+        {coverage.failed > 0 ? (
+          <>
+            <p>Κάλυψη δεδομένων: {coverage.enoughPct}%</p>
+            <p className="error">{coverage.failed} αναζητήσεις απέτυχαν, δοκίμασε ξανά.</p>
+          </>
+        ) : (
+          <p className={coverage.go ? "" : "error"}>
+            {coverage.go
+              ? `Κάλυψη δεδομένων: ${coverage.enoughPct}% ✓`
+              : `Κάλυψη δεδομένων: ${coverage.enoughPct}%, κάτω από 80%. Πολλά tracks αποκλείστηκαν επειδή λείπουν στοιχεία.`}
+          </p>
+        )}
         {shortfallMin > 0 && (
           <p className="muted">
             Βρέθηκαν tracks για {spec.durationMin - shortfallMin} λεπτά από τα {spec.durationMin} που ζήτησες. Δεν γεμίσαμε με

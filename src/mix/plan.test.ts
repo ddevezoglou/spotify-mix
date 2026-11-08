@@ -60,4 +60,10 @@ describe("computeCoverage", () => {
     expect(c).toMatchObject({ withBpm: 1, withGenre: 1 });
     expect(computeCoverage([])).toMatchObject({ enoughPct: 0, go: false });
   });
+  it("go is false when any lookup failed, even at 100%", () => {
+    const all = Array.from({ length: 5 }, (_, i) => mk(`c${i}`));
+    expect(computeCoverage(all, 2)).toMatchObject({ enoughPct: 100, failed: 2, go: false });
+    expect(computeCoverage(all)).toMatchObject({ failed: 0, go: true });
+    expect(planSet(all, spec, undefined, 1).coverage).toMatchObject({ failed: 1, go: false });
+  });
 });

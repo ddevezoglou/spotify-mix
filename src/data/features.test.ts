@@ -58,4 +58,69 @@ describe("getFeatures", () => {
     const url = new URL(fetchMock.mock.calls[0][0]);
     expect(url.searchParams.get("ids")).toBe("t1");
   });
+
+  const cached = () => JSON.parse(localStorage.getItem("sm.features.v2") ?? "{}");
+  const notOk = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+
+  it("does not cache a ReccoBeats batch failure as 'none' and reports it", async () => {
+    for (const fetchImpl of [vi.fn().mockResolvedValue(notOk), vi.fn().mockRejectedValue(new TypeError("down"))]) {
+      localStorage.clear();
+      vi.stubGlobal("fetch", fetchImpl);
+      workerFetch.mockResolvedValue(json({ error: { code: 800, message: "no data" } }));
+      const failed: string[] = [];
+      const f = (await getFeatures([track("t1")], { onFailure: (id) => failed.push(id) })).get("t1")!;
+      expect(f.source).toBe("none");
+      expect(failed).toEqual(["t1"]);
+      expect(cached()).not.toHaveProperty("t1");
+    }
+  });
+
+  it("returns a deezer-only result after a ReccoBeats failure for this run only", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notOk));
+    workerFetch.mockResolvedValue(json({ bpm: 124 }));
+    const failed: string[] = [];
+    const f = (await getFeatures([track("t1")], { onFailure: (id) => failed.push(id) })).get("t1")!;
+    expect(f).toMatchObject({ source: "deezer", bpm: 124 });
+    expect(failed).toEqual(["t1"]);
+    expect(cached()).not.toHaveProperty("t1");
+  });
+
+  it("caches a genuine deezer miss (200 without bpm, or error 800) as 'none'", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ content: [] })));
+    for (const body of [{ bpm: 0 }, { error: { code: 800, message: "no data" } }]) {
+      localStorage.clear();
+      workerFetch.mockResolvedValue(json(body));
+      const onFailure = vi.fn();
+      const f = (await getFeatures([track("t1")], { onFailure })).get("t1")!;
+      expect(f.source).toBe("none");
+      expect(onFailure).not.toHaveBeenCalled();
+      expect(cached().t1.source).toBe("none");
+    }
+  });
+
+  it("treats other deezer errors, non-OK and worker failures as errors: reported, never cached", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ content: [] })));
+    const cases: (() => void)[] = [
+      () => workerFetch.mockResolvedValue(json({ error: { code: 4, message: "Quota limit exceeded" } })),
+      () => workerFetch.mockResolvedValue(notOk),
+      () => workerFetch.mockRejectedValue(new Error("VITE_WORKER_URL is not set")),
+    ];
+    for (const arrange of cases) {
+      localStorage.clear();
+      arrange();
+      const failed: string[] = [];
+      const f = (await getFeatures([track("t1")], { onFailure: (id) => failed.push(id) })).get("t1")!;
+      expect(f.source).toBe("none");
+      expect(failed).toEqual(["t1"]);
+      expect(cached()).not.toHaveProperty("t1");
+    }
+  });
+
+  it("keeps a ReccoBeats row without tempo and takes the BPM from deezer", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ content: [row("t1", { tempo: null })] })));
+    workerFetch.mockResolvedValue(json({ bpm: 124 }));
+    const f = (await getFeatures([track("t1")])).get("t1")!;
+    expect(f).toMatchObject({ source: "reccobeats", bpm: 124, rawBpm: 124, energy: 0.8, valence: 0.6, camelot: "8B" });
+    expect(cached().t1.source).toBe("reccobeats");
+  });
 });

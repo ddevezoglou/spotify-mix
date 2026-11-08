@@ -9,7 +9,10 @@ interface Fake {
   trackTags?: Tag[];
   artistTags?: Tag[];
   trackError6?: boolean;
+  trackError?: number;
+  lastfmStatus?: number;
   deezer?: unknown;
+  deezerThrows?: boolean;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -20,14 +23,19 @@ function fakeFetch(f: Fake): typeof fetch {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     if (url.hostname === "api.spotify.com" && url.pathname === "/v1/me") return json({}, f.me);
     if (url.hostname === "ws.audioscrobbler.com") {
+      if (f.lastfmStatus) return json({}, f.lastfmStatus);
       const method = url.searchParams.get("method");
       if (method === "track.gettoptags") {
         if (f.trackError6) return json({ error: 6, message: "Track not found" });
+        if (f.trackError) return json({ error: f.trackError, message: "Trouble" });
         return json({ toptags: { tag: f.trackTags ?? [] } });
       }
       if (method === "artist.gettoptags") return json({ toptags: { tag: f.artistTags ?? [] } });
     }
-    if (url.hostname === "api.deezer.com") return json(f.deezer ?? {});
+    if (url.hostname === "api.deezer.com") {
+      if (f.deezerThrows) throw new TypeError("network down");
+      return json(f.deezer ?? {});
+    }
     return json({ error: "unrouted " + url.href }, 500);
   }) as typeof fetch;
 }
@@ -128,6 +136,32 @@ describe("worker", () => {
     await handle(authed("https://w/deezer/a"), env, counting);
     await handle(authed("https://w/deezer/b"), env, counting);
     expect(meCalls).toBe(1);
+  });
+
+  it("503 with CORS when last.fm is non-OK or returns an error other than 6", async () => {
+    const origin = { Origin: "http://127.0.0.1:5173" };
+    for (const fake of [{ me: 200, lastfmStatus: 500 }, { me: 200, trackError: 29 }]) {
+      const res = await handle(authed("https://w/tags?artist=a&track=t", origin), env, fakeFetch(fake));
+      expect(res.status).toBe(503);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:5173");
+    }
+  });
+
+  it("502 with CORS when a route throws", async () => {
+    const req = authed("https://w/deezer/track/1", { Origin: "http://127.0.0.1:5173" });
+    const res = await handle(req, env, fakeFetch({ me: 200, deezerThrows: true }));
+    expect(res.status).toBe(502);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:5173");
+  });
+
+  it("503 (not 401) when spotify /me is rate limited or down, and does not memoize it", async () => {
+    for (const me of [429, 500, 503]) {
+      const res = await handle(authed("https://w/deezer/a", { Origin: "http://127.0.0.1:5173" }), env, fakeFetch({ me }));
+      expect(res.status).toBe(503);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:5173");
+    }
+    const res = await handle(authed("https://w/deezer/a"), env, fakeFetch({ me: 401 }));
+    expect(res.status).toBe(401);
   });
 
   it("404 for unknown routes", async () => {
