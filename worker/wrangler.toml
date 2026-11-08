@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2026-11-01"
 
 [vars]
-# Comma-separated. The production origin is added at deploy time.
-ALLOWED_ORIGINS = "http://127.0.0.1:5173"
+# Comma-separated origins (no path, no trailing slash).
+ALLOWED_ORIGINS = "http://127.0.0.1:5173,https://ddevezoglou.github.io"
 
 # Secret (not committed): LASTFM_API_KEY, via `wrangler secret put` or worker/.dev.vars
