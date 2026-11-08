@@ -30,8 +30,8 @@ export interface Segment {
   endSec: number;
 }
 
-const GRID_BARS = 16; // cues land on 16-bar phrase boundaries
-const SEGMENT_BARS: Record<Exclude<SegmentMode, "full">, number> = { fast: 64, club: 112 };
+export const GRID_BARS = 16; // cues land on 16-bar phrase boundaries
+export const SEGMENT_BARS: Record<Exclude<SegmentMode, "full">, number> = { fast: 64, club: 112 };
 const CLUB_LEAD_IN_BARS = 48; // club mode starts with the groove before the drop
 
 /**
