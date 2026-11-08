@@ -34,6 +34,7 @@ const outside = (v: number, lo: number, hi: number) => !(v >= lo && v <= hi);
 export function validateSpec(s: SetSpec): string[] {
   const errors: string[] = [];
   const [lo, hi] = HOUSE_TECHNO.bpmRange;
+  if (s.name.trim() === "") errors.push("Δώσε όνομα στο set.");
   if (s.genres.length === 0) errors.push("Διάλεξε τουλάχιστον ένα είδος.");
   if (s.bpm[0] > s.bpm[1]) errors.push("Το ελάχιστο BPM είναι μεγαλύτερο από το μέγιστο.");
   if (outside(s.bpm[0], lo, hi) || outside(s.bpm[1], lo, hi)) errors.push(`Το BPM πρέπει να είναι ανάμεσα σε ${lo} και ${hi}.`);

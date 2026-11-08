@@ -6,7 +6,16 @@ import { DEFAULT_SPEC, validateSpec, type SetSpec } from "../mix/spec";
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks, SpotifyError, type Playlist } from "../spotify/api";
 import { SpecForm } from "./SpecForm";
 
-type Source = "playlist" | "saved";
+export type Source = "playlist" | "saved";
+
+/** Form state, owned by App so it survives «← Νέο set» and the player tab. */
+export interface NewSetForm {
+  spec: SetSpec;
+  source: Source;
+  playlistId: string;
+}
+
+export const INITIAL_FORM: NewSetForm = { spec: DEFAULT_SPEC, source: "playlist", playlistId: "" };
 
 const LOADING = "Φόρτωση tracks…";
 const STAGES: Record<string, string> = {
@@ -15,11 +24,19 @@ const STAGES: Record<string, string> = {
   genres: "Είδη καλλιτεχνών…",
 };
 
-export function NewSet({ myId, onPlan }: { myId: string; onPlan(plan: SetPlan): void }) {
-  const [spec, setSpec] = useState<SetSpec>(DEFAULT_SPEC);
-  const [source, setSource] = useState<Source>("playlist");
+interface Props {
+  myId: string;
+  form: NewSetForm;
+  onForm(patch: Partial<NewSetForm>): void;
+  onPlan(plan: SetPlan): void;
+}
+
+export function NewSet({ myId, form, onForm, onPlan }: Props) {
+  const { spec, source, playlistId } = form;
+  const setSpec = (s: SetSpec) => onForm({ spec: s });
+  const setSource = (s: Source) => onForm({ source: s });
+  const setPlaylistId = (id: string) => onForm({ playlistId: id });
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [playlistId, setPlaylistId] = useState("");
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

@@ -6,6 +6,11 @@ const bad = (p: Partial<SetSpec>) => validateSpec({ ...DEFAULT_SPEC, ...p });
 
 describe("validateSpec", () => {
   it("accepts the default spec", () => expect(validateSpec(DEFAULT_SPEC)).toEqual([]));
+  it("requires a non-empty trimmed name", () => {
+    expect(bad({ name: "" })).toContain("Δώσε όνομα στο set.");
+    expect(bad({ name: "   " })).toContain("Δώσε όνομα στο set.");
+    expect(bad({ name: " Friday " })).toEqual([]);
+  });
   it("rejects empty genres", () => expect(bad({ genres: [] }).length).toBeGreaterThan(0));
   it("rejects bpm outside range", () => {
     expect(bad({ bpm: [90, 120] }).length).toBeGreaterThan(0);

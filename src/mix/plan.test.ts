@@ -83,6 +83,10 @@ describe("computeCoverage", () => {
     expect(c).toMatchObject({ total: 4, enough: 3, enoughPct: 75, usable: 2, usablePct: 50 });
     expect(computeCoverage([])).toMatchObject({ usable: 0, usablePct: 0 });
   });
+  it("counts each track id once", () => {
+    const c = computeCoverage([mk("a"), mk("a"), mk("b", { hasEnoughData: false })]);
+    expect(c).toMatchObject({ total: 2, enough: 1, enoughPct: 50 });
+  });
   it("go is false when any lookup failed, even at 100%", () => {
     const all = Array.from({ length: 5 }, (_, i) => mk(`c${i}`));
     expect(computeCoverage(all, 2)).toMatchObject({ enoughPct: 100, failed: 2, go: false });

@@ -136,9 +136,12 @@ export async function createPlaylist(name: string, description: string): Promise
   return { id: p.id, url: p.external_urls.spotify };
 }
 
-export async function addItems(playlistId: string, uris: string[]): Promise<void> {
+/** Adds in chunks of 100. `onChunk` gets the count added so far, so a caller can resume after a failure. */
+export async function addItems(playlistId: string, uris: string[], onChunk?: (addedSoFar: number) => void): Promise<void> {
   for (let i = 0; i < uris.length; i += 100) {
-    await call(`/playlists/${playlistId}/items`, { method: "POST", body: JSON.stringify({ uris: uris.slice(i, i + 100) }) });
+    const chunk = uris.slice(i, i + 100);
+    await call(`/playlists/${playlistId}/items`, { method: "POST", body: JSON.stringify({ uris: chunk }) });
+    onChunk?.(i + chunk.length);
   }
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { clearClientId, getAccessToken, getClientId, handleRedirect, login, logout } from "./spotify/auth";
 import { getMe } from "./spotify/api";
 import { PlayerTest } from "./components/PlayerTest";
-import { NewSet } from "./components/NewSet";
+import { INITIAL_FORM, NewSet, type NewSetForm } from "./components/NewSet";
 import { Result } from "./components/Result";
 import type { SetPlan } from "./mix/plan";
 import { Setup } from "./components/Setup";
@@ -13,6 +13,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<SetPlan | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [form, setForm] = useState<NewSetForm>(INITIAL_FORM);
 
   useEffect(() => {
     (async () => {
@@ -85,7 +86,7 @@ export function App() {
           ) : plan ? (
             <Result plan={plan} onBack={() => setPlan(null)} />
           ) : (
-            <NewSet myId={me.id} onPlan={setPlan} />
+            <NewSet myId={me.id} form={form} onForm={(patch) => setForm((f) => ({ ...f, ...patch }))} onPlan={setPlan} />
           )}
         </>
       )}

@@ -10,7 +10,7 @@ vi.mock("../spotify/api", () => ({ getArtistGenres: (id: string) => getArtistGen
 vi.mock("./features", () => ({ getFeatures: (...a: unknown[]) => getFeatures(...a) }));
 vi.mock("./worker", () => ({ workerFetch: (p: string) => workerFetch(p) }));
 
-import { buildProfiles, deriveSoundTags } from "./profile";
+import { buildProfiles, deriveSoundTags, lookupTitle } from "./profile";
 
 const feat = (o: Partial<Features> = {}): Features => ({
   bpm: 124, rawBpm: 124, camelot: "8A", energy: 0.6, valence: 0.5, danceability: 0.7,
@@ -43,6 +43,25 @@ describe("deriveSoundTags", () => {
   it("returns [] for all-null and mid values", () => {
     expect(deriveSoundTags(feat(NULLS))).toEqual([]);
     expect(deriveSoundTags(feat({ ...NULLS, valence: 0.5, energy: 0.6, acousticness: 0.5 }))).toEqual([]);
+  });
+});
+
+describe("lookupTitle", () => {
+  it("strips version suffixes, case-insensitive", () => {
+    expect(lookupTitle("Strings of Life - Original Mix")).toBe("Strings of Life");
+    expect(lookupTitle("Finally (Extended Mix)")).toBe("Finally");
+    expect(lookupTitle("Show Me Love - radio edit")).toBe("Show Me Love");
+    expect(lookupTitle("Gypsy Woman (Club Mix)")).toBe("Gypsy Woman");
+    expect(lookupTitle("Blue Monday - Remastered 2015")).toBe("Blue Monday");
+    expect(lookupTitle("Your Love - 2011 Remaster")).toBe("Your Love");
+    expect(lookupTitle("Big Fun [Remastered]")).toBe("Big Fun");
+    expect(lookupTitle("Pacific State - Radio Edit (Remastered)")).toBe("Pacific State");
+  });
+  it("keeps remix names and plain titles", () => {
+    expect(lookupTitle("Cola (Purple Disco Machine Remix)")).toBe("Cola (Purple Disco Machine Remix)");
+    expect(lookupTitle("Sing It Back - Boris Musical Mix")).toBe("Sing It Back - Boris Musical Mix");
+    expect(lookupTitle("Original Mix")).toBe("Original Mix");
+    expect(lookupTitle("Mix-Up")).toBe("Mix-Up");
   });
 });
 
@@ -116,6 +135,12 @@ describe("buildProfiles", () => {
     workerFetch.mockResolvedValue(tagsRes([]));
     await buildProfiles([track("t1", "a1"), track("t2", "a1"), track("t3", "a2")], opts);
     expect(getArtistGenres).toHaveBeenCalledTimes(2);
+  });
+
+  it("looks up Last.fm with the cleaned title", async () => {
+    setup(feat(), ["techno"]);
+    await buildProfiles([{ ...track("t1"), name: "Spastik - Original Mix" }], opts);
+    expect(workerFetch).toHaveBeenCalledWith("/tags?artist=First&track=Spastik");
   });
 
   it("counts failed feature, tag and genre lookups", async () => {

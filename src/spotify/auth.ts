@@ -9,8 +9,6 @@ const SCOPES = [
   "playlist-read-private",
   "playlist-read-collaborative",
   "playlist-modify-private",
-  "playlist-modify-public",
-  "user-top-read",
   "user-library-read",
 ].join(" ");
 

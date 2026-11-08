@@ -54,11 +54,26 @@ export function deriveSoundTags(f: Features): string[] {
 
 const norm = (tags: string[]) => tags.map((t) => t.trim().toLowerCase()).filter(Boolean);
 
+// A trailing " - X" or "(X)"/"[X]" that only names the version: Original/Extended/Radio/Club Mix|Edit|Version,
+// or Remaster(ed) with an optional year or text. Remix names such as "(Someone Remix)" do not match.
+const MIX_SUFFIX =
+  /(?:\s+-\s*|\s*[([]\s*)(?:(?:original|extended|radio|club)\s+(?:mix|edit|version)|(?:\d{4}\s+)?remaster(?:ed)?\b[^()[\]]*?)\s*[)\]]?\s*$/i;
+
+/** Title for the Last.fm lookup: strips version suffixes ("- Original Mix", "(Extended Mix)", "- Remastered 2011"). */
+export function lookupTitle(name: string): string {
+  let out = name;
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(MIX_SUFFIX, "");
+  }
+  return out.trim() || name;
+}
+
 /** Returns tags, or null when the lookup failed (never cached). */
 async function fetchTags(track: Track): Promise<string[] | null> {
   const artist = track.artists.split(", ")[0];
   try {
-    const res = await workerFetch(`/tags?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track.name)}`);
+    const res = await workerFetch(`/tags?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(lookupTitle(track.name))}`);
     if (!res.ok) return null;
     const data = await res.json();
     return Array.isArray(data?.tags) ? norm(data.tags.map(String)) : null;

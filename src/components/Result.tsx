@@ -19,7 +19,9 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
+  const [added, setAdded] = useState(0); // items already in the playlist; a retry resumes after them
   const [done, setDone] = useState(false);
+  const [notSaved, setNotSaved] = useState(false);
 
   const coverageText = `Κάλυψη δεδομένων: ${coverage.enoughPct}% (με ενέργεια/διάθεση: ${coverage.usablePct}%)`;
 
@@ -40,8 +42,9 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
         pl = await createPlaylist(spec.name, description);
         setCreated(pl); // keep the link even if adding items fails; a retry reuses this playlist
       }
-      await addItems(pl.id, items.map((i) => i.profile.track.uri));
-      saveSet(plan, pl.url);
+      const base = added;
+      await addItems(pl.id, items.map((i) => i.profile.track.uri).slice(base), (n) => setAdded(base + n));
+      setNotSaved(saveSet(plan, pl.url) === null);
       setDone(true);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -138,6 +141,7 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
           </a>
         )}
       </div>
+      {notSaved && <p className="error">Το set δεν αποθηκεύτηκε τοπικά (γεμάτος χώρος).</p>}
       {error && (
         <p className="error">
           {error}{" "}

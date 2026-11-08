@@ -30,8 +30,9 @@ export interface SetPlan {
   coverage: Coverage;
 }
 
-/** Data coverage over ALL source profiles. A genre signal means the track has at least one tag. */
-export function computeCoverage(profiles: TrackProfile[], failed = 0): Coverage {
+/** Data coverage over ALL source profiles, one per track id. A genre signal means the track has at least one tag. */
+export function computeCoverage(all: TrackProfile[], failed = 0): Coverage {
+  const profiles = [...new Map(all.map((p) => [p.track.id, p])).values()];
   const total = profiles.length;
   const withBpm = profiles.filter((p) => p.features.bpm !== null).length;
   const withGenre = profiles.filter((p) => p.tags.length > 0).length;
