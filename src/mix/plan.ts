@@ -16,6 +16,8 @@ export interface Coverage {
   withGenre: number;
   enough: number;
   enoughPct: number;
+  usable: number; // enough data AND energy or valence present, so the mood gate can judge the track
+  usablePct: number;
   failed: number; // lookups that failed in this run (features + tags + genres); the verdict is unreliable while > 0
   go: boolean;
 }
@@ -34,8 +36,10 @@ export function computeCoverage(profiles: TrackProfile[], failed = 0): Coverage 
   const withBpm = profiles.filter((p) => p.features.bpm !== null).length;
   const withGenre = profiles.filter((p) => p.tags.length > 0).length;
   const enough = profiles.filter((p) => p.hasEnoughData).length;
-  const enoughPct = total === 0 ? 0 : Math.round((enough / total) * 100);
-  return { total, withBpm, withGenre, enough, enoughPct, failed, go: enoughPct >= 80 && failed === 0 };
+  const usable = profiles.filter((p) => p.hasEnoughData && (p.features.energy !== null || p.features.valence !== null)).length;
+  const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
+  const enoughPct = pct(enough);
+  return { total, withBpm, withGenre, enough, enoughPct, usable, usablePct: pct(usable), failed, go: enoughPct >= 80 && failed === 0 };
 }
 
 const length = (s: Segment) => s.endSec - s.startSec;
@@ -44,28 +48,42 @@ function segmentFor(p: TrackProfile, mode: SetSpec["cutStyle"]): Segment {
   return planSegment({ durationSec: p.track.durationSec, bpm: p.features.bpm, mode });
 }
 
-export function planSet(profiles: TrackProfile[], spec: SetSpec, g: GenreProfile = HOUSE_TECHNO, failed = 0): SetPlan {
-  const selection = selectTracks(profiles, spec, g);
-  const targetSec = spec.durationMin * 60;
-
-  const taken: TrackProfile[] = [];
-  let sum = 0;
-  for (const { profile } of selection.passed) {
-    if (sum >= targetSec) break;
-    taken.push(profile);
-    sum += length(segmentFor(profile, spec.cutStyle));
-  }
-
+/** Order the tracks, then give each a role and the segment that role implies. */
+function arrange(taken: TrackProfile[], spec: SetSpec, g: GenreProfile): SetItem[] {
   const ordered = orderTracks(taken, spec, g);
-  const items: SetItem[] = ordered.map((profile, i) => {
+  return ordered.map((profile, i) => {
     const prev = i > 0 ? transitionCost(ordered[i - 1], profile, g) : 0;
     const next = i < ordered.length - 1 ? transitionCost(profile, ordered[i + 1], g) : 0;
     const role: Role = prev > BRIDGE_COST || next > BRIDGE_COST ? "bridge" : "main";
     const mode = spec.cutStyle === "full" ? "full" : role === "bridge" ? "fast" : spec.cutStyle;
     return { profile, role, segment: segmentFor(profile, mode) };
   });
+}
 
-  const totalSec = items.reduce((acc, it) => acc + length(it.segment), 0);
+const totalOf = (items: SetItem[]) => items.reduce((acc, it) => acc + length(it.segment), 0);
+
+export function planSet(profiles: TrackProfile[], spec: SetSpec, g: GenreProfile = HOUSE_TECHNO, failed = 0): SetPlan {
+  const selection = selectTracks(profiles, spec, g);
+  const targetSec = spec.durationMin * 60;
+  const passed = selection.passed.map((s) => s.profile);
+
+  // Take passed tracks (best first) until their spec-cut lengths cover `need` seconds; at least one.
+  let used = 0;
+  const take = (need: number) => {
+    do need -= length(segmentFor(passed[used++], spec.cutStyle));
+    while (need > 0 && used < passed.length);
+  };
+
+  let items: SetItem[] = [];
+  let totalSec = 0;
+  // Bridges get shorter cuts than estimated, so refill and re-arrange until the duration is met
+  // or the passed tracks run out. Each round takes at least one track: bounded by passed.length.
+  while (totalSec < targetSec && used < passed.length) {
+    take(targetSec - totalSec);
+    items = arrange(passed.slice(0, used), spec, g);
+    totalSec = totalOf(items);
+  }
+
   const shortfallMin = Math.max(0, Math.ceil((targetSec - totalSec) / 60));
   return { spec, items, totalSec, shortfallMin, selection, coverage: computeCoverage(profiles, failed) };
 }

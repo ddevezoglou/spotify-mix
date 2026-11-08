@@ -21,6 +21,8 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
   const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
   const [done, setDone] = useState(false);
 
+  const coverageText = `Κάλυψη δεδομένων: ${coverage.enoughPct}% (με ενέργεια/διάθεση: ${coverage.usablePct}%)`;
+
   const grouped = new Map<ExcludeReason, string[]>();
   for (const { profile, reason } of selection.excluded) {
     const list = grouped.get(reason) ?? [];
@@ -57,14 +59,14 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
         <h2>{spec.name}</h2>
         {coverage.failed > 0 ? (
           <>
-            <p>Κάλυψη δεδομένων: {coverage.enoughPct}%</p>
+            <p>{coverageText}</p>
             <p className="error">{coverage.failed} αναζητήσεις απέτυχαν, δοκίμασε ξανά.</p>
           </>
         ) : (
           <p className={coverage.go ? "" : "error"}>
             {coverage.go
-              ? `Κάλυψη δεδομένων: ${coverage.enoughPct}% ✓`
-              : `Κάλυψη δεδομένων: ${coverage.enoughPct}%, κάτω από 80%. Πολλά tracks αποκλείστηκαν επειδή λείπουν στοιχεία.`}
+              ? `${coverageText} ✓`
+              : `${coverageText}, κάτω από 80%. Πολλά tracks αποκλείστηκαν επειδή λείπουν στοιχεία.`}
           </p>
         )}
         {shortfallMin > 0 && (

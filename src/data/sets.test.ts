@@ -11,7 +11,7 @@ const plan = (name: string): SetPlan =>
     totalSec: 0,
     shortfallMin: 0,
     selection: { passed: [], excluded: [] },
-    coverage: { total: 0, withBpm: 0, withGenre: 0, enough: 0, enoughPct: 0, failed: 0, go: false },
+    coverage: { total: 0, withBpm: 0, withGenre: 0, enough: 0, enoughPct: 0, usable: 0, usablePct: 0, failed: 0, go: false },
   }) as SetPlan;
 
 describe("sets", () => {

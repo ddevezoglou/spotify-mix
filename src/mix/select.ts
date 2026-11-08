@@ -8,18 +8,32 @@ export interface Scored { profile: TrackProfile; mood: number; genre: number; so
 export interface Selection { passed: Scored[]; excluded: { profile: TrackProfile; reason: ExcludeReason }[] }
 
 const MOOD_MIN = 0.5;
+const MAX_MOOD_TERM = 0.6; // each available mood term (energy, valence) must also stay within this distance
 const GENRE_MIN = 0.6;
 const SOUND_MIN = 0.5;
 const MISSING_TERM = 0.3;
+const SOME_VOCALS_MIN_INSTRUMENTALNESS = 0.2;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
-function moodScore(p: TrackProfile, spec: SetSpec): number {
+/** Distance terms 0 (on target) .. 1 (far); null when the feature is missing. */
+function moodTerms(p: TrackProfile, spec: SetSpec): { energy: number | null; valence: number | null } {
   const { energy, valence } = p.features;
-  if (energy === null && valence === null) return 0.4;
-  const energyTerm = energy === null ? MISSING_TERM : clamp01(Math.max(0, Math.abs(energy - spec.energy) - spec.wave) / 0.4);
-  const valenceTerm = valence === null ? MISSING_TERM : clamp01(Math.abs(valence - spec.valence) / 0.5);
-  return 1 - (energyTerm + valenceTerm) / 2;
+  return {
+    energy: energy === null ? null : clamp01(Math.max(0, Math.abs(energy - spec.energy) - spec.wave) / 0.4),
+    valence: valence === null ? null : clamp01(Math.abs(valence - spec.valence) / 0.5),
+  };
+}
+
+function moodScore(p: TrackProfile, spec: SetSpec): number {
+  const t = moodTerms(p, spec);
+  if (t.energy === null && t.valence === null) return 0.4;
+  return 1 - ((t.energy ?? MISSING_TERM) + (t.valence ?? MISSING_TERM)) / 2;
+}
+
+function moodPasses(p: TrackProfile, spec: SetSpec, mood: number): boolean {
+  const t = moodTerms(p, spec);
+  return mood >= MOOD_MIN && [t.energy, t.valence].every((x) => x === null || x <= MAX_MOOD_TERM);
 }
 
 function genreScore(p: TrackProfile, spec: SetSpec, g: GenreProfile): number {
@@ -36,7 +50,7 @@ function genreScore(p: TrackProfile, spec: SetSpec, g: GenreProfile): number {
 function soundScore(p: TrackProfile, spec: SetSpec): number {
   const inst = p.features.instrumentalness;
   if (spec.vocals === "none" && !p.soundTags.includes("instrumental")) return 0;
-  if (spec.vocals === "some" && inst !== null && inst < 0.2 && !p.soundTags.includes("vocal") && !p.tags.includes("vocal")) return 0;
+  if (spec.vocals === "some" && inst !== null && inst < SOME_VOCALS_MIN_INSTRUMENTALNESS) return 0;
   if (spec.soundTags.length === 0) return 1;
   const have = p.soundTags.map((t) => t.toLowerCase());
   const hits = spec.soundTags.filter((w) => have.some((t) => t.includes(w.toLowerCase()))).length;
@@ -53,21 +67,22 @@ export function scoreTrack(p: TrackProfile, spec: SetSpec, g: GenreProfile = HOU
 export function selectTracks(profiles: TrackProfile[], spec: SetSpec, g: GenreProfile = HOUSE_TECHNO): Selection {
   const passed: Scored[] = [];
   const excluded: Selection["excluded"] = [];
+  // Registries of PASSED tracks only, so an excluded copy never blocks a usable one.
   const ids = new Set<string>();
   const isrcs = new Set<string>();
   for (const profile of profiles) {
     const { id, isrc } = profile.track;
-    const dup = ids.has(id) || (isrc !== null && isrcs.has(isrc));
-    ids.add(id);
-    if (isrc !== null) isrcs.add(isrc);
-    if (dup) { excluded.push({ profile, reason: "duplicate" }); continue; }
-    if (!profile.hasEnoughData) { excluded.push({ profile, reason: "no-data" }); continue; }
+    if (ids.has(id) || (isrc !== null && isrcs.has(isrc))) { excluded.push({ profile, reason: "duplicate" }); continue; }
+    const { energy, valence } = profile.features;
+    if (!profile.hasEnoughData || (energy === null && valence === null)) { excluded.push({ profile, reason: "no-data" }); continue; }
     const bpm = profile.features.bpm;
     if (bpm === null || bpm < spec.bpm[0] || bpm > spec.bpm[1]) { excluded.push({ profile, reason: "bpm" }); continue; }
     const s = scoreTrack(profile, spec, g);
-    const reason: ExcludeReason | null = s.mood < MOOD_MIN ? "mood" : s.genre < GENRE_MIN ? "genre" : s.sound < SOUND_MIN ? "sound" : null;
-    if (reason) excluded.push({ profile, reason });
-    else passed.push(s);
+    const reason: ExcludeReason | null = !moodPasses(profile, spec, s.mood) ? "mood" : s.genre < GENRE_MIN ? "genre" : s.sound < SOUND_MIN ? "sound" : null;
+    if (reason) { excluded.push({ profile, reason }); continue; }
+    passed.push(s);
+    ids.add(id);
+    if (isrc !== null) isrcs.add(isrc);
   }
   passed.sort((a, b) => b.total - a.total);
   return { passed, excluded };

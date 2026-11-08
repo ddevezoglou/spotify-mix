@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TrackProfile } from "../data/profile";
+import { deriveSoundTags, type TrackProfile } from "../data/profile";
+import type { Features } from "../data/features";
 import { scoreTrack, selectTracks } from "./select";
 import { DEFAULT_SPEC, type SetSpec } from "./spec";
 
@@ -11,22 +12,25 @@ interface Opts {
 }
 
 // Defaults pass every gate against `spec`, so a test only fails the property it overrides.
+// soundTags are derived like in buildProfiles (tags + deriveSoundTags) unless given explicitly.
 function mk(o: Opts = {}): TrackProfile {
   const bpm = o.bpm === undefined ? 123 : o.bpm;
   const id = o.id ?? "t1";
+  const features: Features = {
+    bpm, rawBpm: bpm, camelot: "8A",
+    energy: o.energy === undefined ? 0.6 : o.energy,
+    valence: o.valence === undefined ? 0.5 : o.valence,
+    danceability: null,
+    instrumentalness: o.instrumentalness === undefined ? null : o.instrumentalness,
+    acousticness: null,
+    source: "none", fetchedAt: 0,
+  };
+  const tags = o.tags ?? ["deep house"];
   return {
     track: { id, uri: `spotify:track:${id}`, name: "T", artists: "A", artistIds: ["a"], durationSec: 300, isrc: o.isrc === undefined ? null : o.isrc },
-    features: {
-      bpm, rawBpm: bpm, camelot: "8A",
-      energy: o.energy === undefined ? 0.6 : o.energy,
-      valence: o.valence === undefined ? 0.5 : o.valence,
-      danceability: null,
-      instrumentalness: o.instrumentalness === undefined ? null : o.instrumentalness,
-      acousticness: null,
-      source: "none", fetchedAt: 0,
-    },
-    tags: o.tags ?? ["deep house"],
-    soundTags: o.soundTags ?? [],
+    features,
+    tags,
+    soundTags: o.soundTags ?? [...new Set([...tags, ...deriveSoundTags(features)])],
     hasEnoughData: o.hasEnoughData ?? true,
   };
 }
@@ -57,10 +61,37 @@ describe("selectTracks", () => {
     expect(reasons(mk({ energy: 0.1, valence: 0.9 }))).toEqual(["mood"]);
     expect(reasons(mk({ tags: ["jazz"] }))).toEqual(["genre"]);
   });
-  it("some-vocals rejects low instrumentalness only without a vocal tag", () => {
+  it("some-vocals rejects instrumentalness below 0.2 even though the profile carries a vocal tag", () => {
     const s = { ...spec, vocals: "some" as const };
-    expect(reasons(mk({ instrumentalness: 0.1 }), s)).toEqual(["sound"]);
-    expect(reasons(mk({ instrumentalness: 0.1, soundTags: ["vocal"] }), s)).toEqual([]);
+    const vocalHeavy = mk({ instrumentalness: 0.1 });
+    expect(vocalHeavy.soundTags).toContain("vocal");
+    expect(reasons(vocalHeavy, s)).toEqual(["sound"]);
+    expect(reasons(mk({ instrumentalness: 0.2 }), s)).toEqual([]);
+    expect(reasons(mk({ instrumentalness: 0.6 }), s)).toEqual([]);
+    expect(reasons(mk({ instrumentalness: null }), s)).toEqual([]);
+  });
+  it("checks duplicates only against tracks that passed", () => {
+    const noData = mk({ id: "id1", isrc: "X", hasEnoughData: false });
+    const good = mk({ id: "id2", isrc: "X" });
+    const s = selectTracks([noData, good], spec);
+    expect(s.passed.map((x) => x.profile.track.id)).toEqual(["id2"]);
+    expect(s.excluded.map((e) => e.reason)).toEqual(["no-data"]);
+    const sameId = selectTracks([mk({ id: "id1", bpm: 140 }), mk({ id: "id1" })], spec);
+    expect(sameId.passed).toHaveLength(1);
+  });
+  it("excludes on mood when one term is far even if the mean passes", () => {
+    // energy term (0.45 - 0.1) / 0.4 = 0.875, mean mood 0.5625
+    expect(reasons(mk({ energy: 0.15, valence: 0.5 }), { ...spec, energy: 0.6, wave: 0.1 })).toEqual(["mood"]);
+    // valence term 0.45 / 0.5 = 0.9, mean mood 0.55
+    expect(reasons(mk({ energy: 0.6, valence: 0.65 }), { ...spec, valence: 0.2 })).toEqual(["mood"]);
+  });
+  it("a mood term of exactly 0.6 passes", () => {
+    // valence term 0.3 / 0.5 = 0.6
+    expect(reasons(mk({ energy: 0.6, valence: 0.5 }), { ...spec, valence: 0.2 })).toEqual([]);
+  });
+  it("excludes with no-data, not mood, when energy and valence are both missing", () => {
+    expect(reasons(mk({ energy: null, valence: null }))).toEqual(["no-data"]);
+    expect(reasons(mk({ energy: null, valence: 0.5 }))).toEqual([]);
   });
   it("sorts passed by total descending", () => {
     const hi = mk({ id: "hi" }), lo = mk({ id: "lo", energy: 0.75, valence: 0.7 });
