@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { getAccessToken, handleRedirect, hasClientId, login, logout, redirectUri } from "./spotify/auth";
+import { clearClientId, getAccessToken, getClientId, handleRedirect, login, logout } from "./spotify/auth";
 import { getMe } from "./spotify/api";
 import { PlayerTest } from "./components/PlayerTest";
 import { CoverageTest } from "./components/CoverageTest";
+import { Setup } from "./components/Setup";
 
 type Tab = "player" | "coverage";
 
@@ -25,46 +26,37 @@ export function App() {
     })();
   }, []);
 
-  if (!hasClientId()) {
-    return (
-      <main className="wrap">
-        <h1>Spotify Mix</h1>
-        <div className="card">
-          <p>Λείπει το Spotify Client ID.</p>
-          <ol>
-            <li>
-              Φτιάξε app στο <a href="https://developer.spotify.com/dashboard">Spotify Developer Dashboard</a> (Web API + Web Playback SDK).
-            </li>
-            <li>
-              Redirect URI: <code>{redirectUri()}</code>
-            </li>
-            <li>
-              Βάλε το Client ID στο <code>.env.local</code> ως <code>VITE_SPOTIFY_CLIENT_ID=...</code> και ξανατρέξε <code>npm run dev</code>.
-            </li>
-          </ol>
-        </div>
-      </main>
-    );
-  }
+  if (!getClientId()) return <Setup />;
 
   return (
     <main className="wrap">
       <header className="top">
         <h1>Spotify Mix</h1>
-        {me && (
-          <div className="who">
-            {me.display_name}
-            <button
-              className="ghost"
-              onClick={() => {
-                logout();
-                setMe(null);
-              }}
-            >
-              Αποσύνδεση
-            </button>
-          </div>
-        )}
+        <div className="who">
+          <button
+            className="ghost"
+            onClick={() => {
+              clearClientId();
+              location.reload();
+            }}
+          >
+            Αλλαγή Client ID
+          </button>
+          {me && (
+            <>
+              {me.display_name}
+              <button
+                className="ghost"
+                onClick={() => {
+                  logout();
+                  setMe(null);
+                }}
+              >
+                Αποσύνδεση
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {error && <p className="error">{error}</p>}
