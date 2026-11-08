@@ -10,16 +10,8 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
-    proxy: {
-      // Deezer sends no CORS header; proxy it in dev. Production will use the Cloudflare Worker (Phase 2).
-      "/deezer": {
-        target: "https://api.deezer.com",
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/deezer/, ""),
-      },
-    },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "worker/**/*.test.ts"],
   },
 });
