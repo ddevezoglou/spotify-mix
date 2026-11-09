@@ -18,14 +18,19 @@ The user writes in Greek. Answer in Greek: simple, short and complete.
 - No API keys and no cost for end users. Every user brings their own Spotify Client ID, using the in-app guide.
 - No unofficial or private Spotify APIs.
 
-## Current state (2026-11-08)
-- **Engine v1 is done.** The flow is: playlist or Saved → form → selection → order → cuts → new Spotify playlist, plus a data-coverage report. 116 tests pass.
+## Current state (2026-11-09)
+- **Engine v1 is done.** The flow is: playlist or Saved → form → selection → order → cuts → new Spotify playlist, plus a data-coverage report. 113 tests pass.
 - **Live site:** https://ddevezoglou.github.io/spotify-mix/ (GitHub Pages, deployed from `main` by `.github/workflows/pages.yml`).
 - **Worker:** https://spotify-mix-worker.ddevezoglou.workers.dev (Cloudflare). It holds the `LASTFM_API_KEY` secret, `ALLOWED_ORIGINS` is set in `worker/wrangler.toml`, and the repo variable `WORKER_URL` points to it.
-- **Pending: the Phase 0 coverage number.** It comes from the user's 526-track "House" playlist. Go = enough ≥ 80% **and** failed lookups = 0. Record the result in the README.
+- **Phase 0 coverage (2026-11-09): 28%, no-go.** House playlist has 531 tracks. ReccoBeats covers 212. Deezer has the rest but with `bpm: 0`. Spotify artist genres come back empty, so that lookup was removed. Last.fm gives a clean subgenre for only 20% of tracks.
+- The user's main criterion is **mood and similar sound**. The worst failure is a sudden genre change (for example melodic techno → deep house).
+- **Audio analysis is designed and planned, but no code exists yet:**
+  - Design: `docs/superpowers/specs/2026-11-09-audio-analysis-design.md`
+  - Plan: `docs/superpowers/plans/2026-11-09-audio-analysis.md` (9 tasks; Task 1 is a go/no-go spike)
+  - Decisions already taken: Deezer previews are used, for personal use; essentia.js is accepted, so the repo gets an AGPL-3.0 licence if the spike passes.
 
 ## Next
-1. If coverage is no-go, raise it first, for example with in-browser analysis of Deezer 30-second previews (spec §5.3.4, after checking their terms).
+1. **Run the audio-analysis plan, starting with Task 1 (spike).** The execution method was not chosen yet. Recommendation: native (implement in-session, one final review). The user opens `spike.html` on the live site and sends back the JSON.
 2. **Phase 2 plan:** the set player with cuts. Spotify Connect is the primary device (the music keeps playing if the tab dies) and the Web Playback SDK is the fallback. It needs a background-timing check, user cue corrections, and LRCLIB chorus detection.
 3. **Phase 3 plan:** free-text prompts through Cloudflare Workers AI (Gemini's free tier is not allowed for EEA users), a "whole Spotify" source, and per-user rate limits in the Worker.
 
