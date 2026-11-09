@@ -14,6 +14,7 @@ This lists the items the reviews found and left for later, plus the decisions ta
 | Coverage go = enough ≥ 80% **and** failed = 0. "Usable" % is also shown | An honest Phase 0 measurement | — |
 | Saved sets keep only spec, order and cuts (`sm.sets.v2`) | Full profiles filled localStorage | Old `sm.sets.v1` entries are not read |
 | Removed scopes `playlist-modify-public` and `user-top-read` | Least privilege | Phase 3 may need to add `user-top-read` back |
+| Removed the Spotify artist-genres lookup (2026-11-09) | On the 531-track House playlist it returned 0 genres for 276 artists and failed for 48, blocking the coverage verdict. Genre now comes only from Last.fm tags | None while Spotify keeps the field empty |
 
 ## Open items (can wait)
 ### Selection and ordering (tune after real sets)
