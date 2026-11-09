@@ -72,6 +72,9 @@ export function Result({ plan, onBack }: { plan: SetPlan; onBack(): void }) {
               : `${coverageText}, κάτω από 80%. Πολλά tracks αποκλείστηκαν επειδή λείπουν στοιχεία.`}
           </p>
         )}
+        <p className="muted">
+          Από {coverage.total} tracks: {coverage.withBpm} με BPM, {coverage.withGenre} με tags είδους.
+        </p>
         {shortfallMin > 0 && (
           <p className="muted">
             Βρέθηκαν tracks για {spec.durationMin - shortfallMin} λεπτά από τα {spec.durationMin} που ζήτησες. Δεν γεμίσαμε με
