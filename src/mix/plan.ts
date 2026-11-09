@@ -18,7 +18,7 @@ export interface Coverage {
   enoughPct: number;
   usable: number; // enough data AND energy or valence present, so the mood gate can judge the track
   usablePct: number;
-  failed: number; // lookups that failed in this run (features + tags + genres); the verdict is unreliable while > 0
+  failed: number; // lookups that failed in this run (features + tags); the verdict is unreliable while > 0
   go: boolean;
 }
 export interface SetPlan {

@@ -21,7 +21,6 @@ const LOADING = "Φόρτωση tracks…";
 const STAGES: Record<string, string> = {
   features: "Στοιχεία ήχου…",
   tags: "Tags…",
-  genres: "Είδη καλλιτεχνών…",
 };
 
 interface Props {
@@ -61,7 +60,7 @@ export function NewSet({ myId, form, onForm, onPlan }: Props) {
         bpmRange: HOUSE_TECHNO.bpmRange,
         onProgress: (stage, done, total) => setProgress(`${STAGES[stage] ?? stage} ${done}/${total}`),
       });
-      onPlan(planSet(profiles, spec, HOUSE_TECHNO, failed.features + failed.tags + failed.genres));
+      onPlan(planSet(profiles, spec, HOUSE_TECHNO, failed.features + failed.tags));
     } catch (e) {
       if (source === "saved" && e instanceof SpotifyError && e.status === 403) {
         setError("Το Spotify δεν επιτρέπει ανάγνωση των Saved για αυτό το app.");

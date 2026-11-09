@@ -104,29 +104,6 @@ export const getPlaylistTracks = (playlistId: string, onProgress?: (n: number) =
 
 export const getSavedTracks = (onProgress?: (n: number) => void) => collectTracks("/me/tracks?limit=50", onProgress);
 
-const GENRE_CACHE_KEY = "sm.artistGenres.v1";
-
-function readGenreCache(): Record<string, string[]> {
-  try {
-    return JSON.parse(localStorage.getItem(GENRE_CACHE_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
-/** Batch /artists?ids= is gone in Dev Mode, so one call per artist, cached. */
-export async function getArtistGenres(artistId: string): Promise<string[]> {
-  const cache = readGenreCache();
-  if (cache[artistId]) return cache[artistId];
-  const data = await call<{ genres?: string[] }>(`/artists/${artistId}`);
-  const genres = data.genres ?? [];
-  try {
-    localStorage.setItem(GENRE_CACHE_KEY, JSON.stringify({ ...readGenreCache(), [artistId]: genres }));
-  } catch {
-    // storage unavailable or full: skip caching
-  }
-  return genres;
-}
 
 export async function createPlaylist(name: string, description: string): Promise<{ id: string; url: string }> {
   const p = await call<{ id: string; external_urls: { spotify: string } }>("/me/playlists", {

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./auth", () => ({ getAccessToken: async () => "t" }));
 
-import { addItems, createPlaylist, getArtistGenres, getMe, getPlaylistTracks, getSavedTracks, SpotifyError } from "./api";
+import { addItems, createPlaylist, getMe, getPlaylistTracks, getSavedTracks, SpotifyError } from "./api";
 
 const fetchMock = vi.fn();
 
@@ -72,20 +72,6 @@ describe("spotify api", () => {
     expect(tracks.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(fetchMock.mock.calls[0][0]).toContain("/me/tracks?limit=50");
     expect(progress).toEqual([1, 2]);
-  });
-
-  it("getArtistGenres returns genres and caches in localStorage", async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({ id: "a1", genres: ["house", "techno"] }));
-    await expect(getArtistGenres("a1")).resolves.toEqual(["house", "techno"]);
-    await expect(getArtistGenres("a1")).resolves.toEqual(["house", "techno"]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain("/artists/a1");
-    expect(JSON.parse(localStorage.getItem("sm.artistGenres.v1")!)).toEqual({ a1: ["house", "techno"] });
-  });
-
-  it("getArtistGenres defaults to [] when genres missing", async () => {
-    fetchMock.mockResolvedValueOnce(Response.json({ id: "a2" }));
-    await expect(getArtistGenres("a2")).resolves.toEqual([]);
   });
 
   it("adds items in chunks of 100 in order", async () => {

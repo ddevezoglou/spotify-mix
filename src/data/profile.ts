@@ -1,13 +1,13 @@
 // Combines audio features with genre/sound tags into one profile per track.
 import { genreVocabulary } from "../mix/genres";
-import { getArtistGenres, type Track } from "../spotify/api";
+import type { Track } from "../spotify/api";
 import { getFeatures, type Features } from "./features";
 import { workerFetch } from "./worker";
 
 export interface TrackProfile {
   track: Track;
   features: Features;
-  tags: string[]; // normalized: Last.fm tags + Spotify artist genres, lowercased, deduped
+  tags: string[]; // normalized Last.fm tags, lowercased, deduped (Spotify artist genres are empty in Dev Mode)
   soundTags: string[]; // tags + deriveSoundTags(features)
   hasEnoughData: boolean; // features.bpm !== null && genre signal present
 }
@@ -94,7 +94,6 @@ async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>
 export interface FailedLookups {
   features: number; // tracks
   tags: number; // tracks
-  genres: number; // artists
 }
 
 export async function buildProfiles(
@@ -135,31 +134,13 @@ export async function buildProfiles(
   });
   saveCache(cache);
 
-  // Spotify artist genres: once per unique first artist.
-  const artistIds = [...new Set(tracks.map((t) => t.artistIds[0]).filter((id): id is string => !!id))];
-  const genresByArtist = new Map<string, string[]>();
-  let failedGenres = 0;
-  let gDone = 0;
-  onProgress?.("genres", 0, artistIds.length);
-  await pool(artistIds, CONCURRENCY, async (id) => {
-    try {
-      genresByArtist.set(id, norm(await getArtistGenres(id)));
-    } catch {
-      genresByArtist.set(id, []);
-      failedGenres++;
-    }
-    onProgress?.("genres", ++gDone, artistIds.length);
-  });
-
   const vocab = new Set(genreVocabulary());
   const profiles = tracks.map((track) => {
     const f = features.get(track.id) as Features;
-    const lastfm = tagsById.get(track.id) ?? [];
-    const genres = genresByArtist.get(track.artistIds[0]) ?? [];
-    const tags = [...new Set([...lastfm, ...genres])];
+    const tags = [...new Set(tagsById.get(track.id) ?? [])];
     const soundTags = [...new Set([...tags, ...deriveSoundTags(f)])];
-    const genreSignal = tags.some((t) => vocab.has(t)) || genres.length > 0;
+    const genreSignal = tags.some((t) => vocab.has(t));
     return { track, features: f, tags, soundTags, hasEnoughData: f.bpm !== null && genreSignal };
   });
-  return { profiles, failed: { features: failedFeatures.size, tags: failedTags.size, genres: failedGenres } };
+  return { profiles, failed: { features: failedFeatures.size, tags: failedTags.size } };
 }

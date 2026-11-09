@@ -3,10 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "../spotify/api";
 import type { Features } from "./features";
 
-const getArtistGenres = vi.fn();
 const getFeatures = vi.fn();
 const workerFetch = vi.fn();
-vi.mock("../spotify/api", () => ({ getArtistGenres: (id: string) => getArtistGenres(id) }));
 vi.mock("./features", () => ({ getFeatures: (...a: unknown[]) => getFeatures(...a) }));
 vi.mock("./worker", () => ({ workerFetch: (p: string) => workerFetch(p) }));
 
@@ -25,7 +23,6 @@ const opts = { bpmRange: [110, 150] as [number, number] };
 
 beforeEach(() => {
   localStorage.clear();
-  getArtistGenres.mockReset().mockResolvedValue([]);
   getFeatures.mockReset();
   workerFetch.mockReset();
 });
@@ -66,10 +63,9 @@ describe("lookupTitle", () => {
 });
 
 describe("buildProfiles", () => {
-  const setup = (f: Features, tags: string[], genres: string[] = []) => {
+  const setup = (f: Features, tags: string[]) => {
     getFeatures.mockResolvedValue(new Map([["t1", f]]));
     workerFetch.mockResolvedValue(tagsRes(tags));
-    getArtistGenres.mockResolvedValue(genres);
   };
 
   it("has enough data with BPM and a vocabulary tag; tags are normalized", async () => {
@@ -81,7 +77,7 @@ describe("buildProfiles", () => {
     expect(workerFetch).toHaveBeenCalledWith("/tags?artist=First&track=n%20t1");
   });
 
-  it("is false with BPM but no tags or genres", async () => {
+  it("is false with BPM but no tags", async () => {
     setup(feat(), []);
     expect((await buildProfiles([track("t1")], opts)).profiles[0].hasEnoughData).toBe(false);
   });
@@ -91,11 +87,11 @@ describe("buildProfiles", () => {
     expect((await buildProfiles([track("t1")], opts)).profiles[0].hasEnoughData).toBe(false);
   });
 
-  it("counts any Spotify artist genre as signal and merges deduped", async () => {
-    setup(feat(), ["indietronica"], ["Indietronica", "Weird Genre"]);
+  it("needs a vocabulary tag: other tags are kept but give no genre signal", async () => {
+    setup(feat(), ["Indietronica", "seen live"]);
     const { profiles: [p] } = await buildProfiles([track("t1")], opts);
-    expect(p.hasEnoughData).toBe(true);
-    expect(p.tags).toEqual(["indietronica", "weird genre"]);
+    expect(p.hasEnoughData).toBe(false);
+    expect(p.tags).toEqual(["indietronica", "seen live"]);
   });
 
   it("does not cache failed lookups (throw or non-OK)", async () => {
@@ -130,35 +126,24 @@ describe("buildProfiles", () => {
     expect(p.tags).toEqual(["techno"]);
   });
 
-  it("looks up artist genres once per unique first artist", async () => {
-    getFeatures.mockResolvedValue(new Map([["t1", feat()], ["t2", feat()], ["t3", feat()]]));
-    workerFetch.mockResolvedValue(tagsRes([]));
-    await buildProfiles([track("t1", "a1"), track("t2", "a1"), track("t3", "a2")], opts);
-    expect(getArtistGenres).toHaveBeenCalledTimes(2);
-  });
-
   it("looks up Last.fm with the cleaned title", async () => {
     setup(feat(), ["techno"]);
     await buildProfiles([{ ...track("t1"), name: "Spastik - Original Mix" }], opts);
     expect(workerFetch).toHaveBeenCalledWith("/tags?artist=First&track=Spastik");
   });
 
-  it("counts failed feature, tag and genre lookups", async () => {
+  it("counts failed feature and tag lookups", async () => {
     getFeatures.mockImplementation(async (_t: Track[], o: { onFailure?: (id: string) => void }) => {
       o.onFailure?.("t2");
       return new Map([["t1", feat()], ["t2", feat()]]);
     });
     workerFetch.mockResolvedValueOnce(tagsRes(["techno"])).mockRejectedValueOnce(new Error("down"));
-    getArtistGenres.mockImplementation(async (id: string) => {
-      if (id === "a2") throw new Error("429");
-      return [];
-    });
     const { failed } = await buildProfiles([track("t1", "a1"), track("t2", "a2")], opts);
-    expect(failed).toEqual({ features: 1, tags: 1, genres: 1 });
+    expect(failed).toEqual({ features: 1, tags: 1 });
   });
 
   it("reports no failures when every lookup answers", async () => {
     setup(feat(), []);
-    expect((await buildProfiles([track("t1")], opts)).failed).toEqual({ features: 0, tags: 0, genres: 0 });
+    expect((await buildProfiles([track("t1")], opts)).failed).toEqual({ features: 0, tags: 0 });
   });
 });
